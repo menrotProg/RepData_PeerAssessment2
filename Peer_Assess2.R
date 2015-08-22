@@ -15,6 +15,8 @@
 #' 
 #' The answers to these questions will appear in the **Results** section of this article.
 #' 
+#' In the data processing section of the economic impact, I have made some data cleaning and data transformation as described below.
+#' 
 #' By answering these questions, the authorities can prioritize their actions following weather forecasts warning of such events.
 #' 
 #' # Data Processing
@@ -147,44 +149,37 @@ sqldf("SELECT CROPDMG FROM storm_data WHERE (CROPDMGEXP = '' AND CROPDMG>0)")
 ## Convert all $ values to Billion's of $
 #############################################
 
+
+## A function to ocnvert to Billions
 ConvertToBillions <- function(code) {
   switch(code, K = 1e-6, M = 1e-3, B = 1, 0)
 }
 
+###################################################
 ## Do the transformation for the property damage
+###################################################
 PropCost <- aggregate (storm_data$PROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$PROPDMGEXP), sum)
 
 PropCost <- sqldf("SELECT * FROM PropCost WHERE exp IN ('B', 'M', 'K,')")
 
 PropCost$Cost <- PropCost$x * sapply(PropCost$exp, ConvertToBillions)
 
-# for (i in 1:dim(PropCost)[1]) {
-#   if (PropCost[i, "exp"] == "K") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000000}
-#   else if (PropCost[i, "exp"] == "M") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000}
-#   else if (PropCost[i, "exp"] == "B") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1}
-# }
 
-
+###################################################
 #Do the transformation for the corp damage
+###################################################
 CropCost <- aggregate (storm_data$CROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$CROPDMGEXP), sum)
 
 CropCost <- sqldf("SELECT * FROM CropCost WHERE exp IN ('B', 'M', 'K,')")
 
 CropCost$Cost <- CropCost$x * sapply(CropCost$exp, ConvertToBillions)
 
-
-# for (i in 1:dim(CropCost)[1]) {
-#   if (CropCost[i, "exp"] == "K") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000000}
-#   else if (CropCost[i, "exp"] == "M") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000}
-#   else if (CropCost[i, "exp"] == "B") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1}
-# }
-
 DmgCost <-rbind(PropCost, CropCost)
 DmgCostAgg<-aggregate(DmgCost$Cost, list(EVTYPE=DmgCost$type), sum)
 
 ## Find the top 10 event types
 High_Impact_E <- sqldf("SELECT * FROM DmgCostAgg ORDER BY x DESC LIMIT 10")
-# names(High_Impact_E)[2] <- "Cost"
+names(High_Impact_E)[2] <- "Cost"
 
 
 
@@ -222,7 +217,7 @@ print (g)
 #' As can be seen above - TORNADO has the highest inhuruis and also highest fatalities.
 #' 
 #' 
-#' ## The type of events with the greatest econimic consequences
+#' ## The type of events with the greatest economic consequences
 #' 
 ## ----Plot Economy--------------------------------------------------------
 print (gE)
