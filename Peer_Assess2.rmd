@@ -15,6 +15,8 @@ Based on the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm
 
 The answers to these questions will appear in the **Results** section of this article.
 
+In the data processing section of the economic impact, I have made some data cleaning and data transformation as described below.
+
 By answering these questions, the authorities can prioritize their actions following weather forecasts warning of such events.
 
 # Data Processing
@@ -111,6 +113,33 @@ g <- g + facet_wrap( ~ variable, ncol=1)
 
 The economic impact is calculated as the sum of the property damage and the corp damage. 
 
+By exploring the data, I realized that the column with code for damage has additional values to the B, M, K mentioned in the documentation. So, first I explore the data to see if these additional codes are meaningful or not. 
+
+
+``` {r explore the codes for damages (PROPDMGEXP and CROPDMGEXP)}
+
+sqldf("SELECT PROPDMGEXP , COUNT(PROPDMGEXP) FROM storm_data GROUP BY PROPDMGEXP")
+
+
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT PROPDMG FROM storm_data WHERE (PROPDMGEXP = '' AND PROPDMG>0)")
+```
+
+There are 76 instances with property damage, but no code for $ value. In this analysis I will ignore them, alas its worth to try to get information and modify the raw data.
+
+
+
+```{r explore the codes for damages - CROPDMGEXP}
+sqldf("SELECT CROPDMGEXP , COUNT(CROPDMGEXP) FROM storm_data GROUP BY CROPDMGEXP")
+
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT CROPDMG FROM storm_data WHERE (CROPDMGEXP = '' AND CROPDMG>0)")
+```
+
+In the above tables we can see that we can ignore all codes except K,M,B as the others have relatively moinor impact. 
+
+
+
 As the damage is presented with codes for thousand (K), millions (M) and billions (B), I have transformed all of them to be in Billions of $, for both the property damage and the corp damage.
 
 
@@ -120,28 +149,30 @@ As the damage is presented with codes for thousand (K), millions (M) and billion
 ## Convert all $ values to Billion's of $
 #############################################
 
+
+## A function to ocnvert to Billions
+ConvertToBillions <- function(code) {
+  switch(code, K = 1e-6, M = 1e-3, B = 1, 0)
+}
+
+###################################################
 ## Do the transformation for the property damage
+###################################################
 PropCost <- aggregate (storm_data$PROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$PROPDMGEXP), sum)
 
 PropCost <- sqldf("SELECT * FROM PropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(PropCost)[1]) {
-  if (PropCost[i, "exp"] == "K") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000000}
-  else if (PropCost[i, "exp"] == "M") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000}
-  else if (PropCost[i, "exp"] == "B") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1}
-}
+PropCost$Cost <- PropCost$x * sapply(PropCost$exp, ConvertToBillions)
 
 
+###################################################
 #Do the transformation for the corp damage
+###################################################
 CropCost <- aggregate (storm_data$CROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$CROPDMGEXP), sum)
 
 CropCost <- sqldf("SELECT * FROM CropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(CropCost)[1]) {
-  if (CropCost[i, "exp"] == "K") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000000}
-  else if (CropCost[i, "exp"] == "M") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000}
-  else if (CropCost[i, "exp"] == "B") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1}
-}
+CropCost$Cost <- CropCost$x * sapply(CropCost$exp, ConvertToBillions)
 
 DmgCost <-rbind(PropCost, CropCost)
 DmgCostAgg<-aggregate(DmgCost$Cost, list(EVTYPE=DmgCost$type), sum)
@@ -178,7 +209,7 @@ gE <- gE + theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1))
 The following plot describes the most harmful typed of events.
 
 **Note** - As Tornado injuries are very high (above 90,000), we have trimmed the chart so the other events can be visible. 
-``` {r Plot health}
+``` {r Plot health }
 print (g)
 
 ```
@@ -186,7 +217,7 @@ print (g)
 As can be seen above - TORNADO has the highest inhuruis and also highest fatalities.
 
 
-## The type of events with the greatest econimic consequences
+## The type of events with the greatest economic consequences
 
 ``` {r Plot Economy}
 print (gE)

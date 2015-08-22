@@ -111,6 +111,33 @@ g <- g + facet_wrap( ~ variable, ncol=1)
 #' 
 #' The economic impact is calculated as the sum of the property damage and the corp damage. 
 #' 
+#' By exploring the data, I realized that the column with code for damage has additional values to the B, M, K mentioned in the documentation. So, first I explore the data to see if these additional codes are meaningful or not. 
+#' 
+#' 
+## ----explore the codes for damages (PROPDMGEXP and CROPDMGEXP)-----------
+
+sqldf("SELECT PROPDMGEXP , COUNT(PROPDMGEXP) FROM storm_data GROUP BY PROPDMGEXP")
+
+
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT PROPDMG FROM storm_data WHERE (PROPDMGEXP = '' AND PROPDMG>0)")
+
+#' 
+#' There are 76 instances with property damage, but no code for $ value. In this analysis I will ignore them, alas its worth to try to get information and modify the raw data.
+#' 
+#' 
+#' 
+## ----explore the codes for damages - CROPDMGEXP--------------------------
+sqldf("SELECT CROPDMGEXP , COUNT(CROPDMGEXP) FROM storm_data GROUP BY CROPDMGEXP")
+
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT CROPDMG FROM storm_data WHERE (CROPDMGEXP = '' AND CROPDMG>0)")
+
+#' 
+#' In the above tables we can see that we can ignore all codes except K,M,B as the others have relatively moinor impact. 
+#' 
+#' 
+#' 
 #' As the damage is presented with codes for thousand (K), millions (M) and billions (B), I have transformed all of them to be in Billions of $, for both the property damage and the corp damage.
 #' 
 #' 
@@ -120,16 +147,22 @@ g <- g + facet_wrap( ~ variable, ncol=1)
 ## Convert all $ values to Billion's of $
 #############################################
 
+ConvertToBillions <- function(code) {
+  switch(code, K = 1e-6, M = 1e-3, B = 1, 0)
+}
+
 ## Do the transformation for the property damage
 PropCost <- aggregate (storm_data$PROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$PROPDMGEXP), sum)
 
 PropCost <- sqldf("SELECT * FROM PropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(PropCost)[1]) {
-  if (PropCost[i, "exp"] == "K") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000000}
-  else if (PropCost[i, "exp"] == "M") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000}
-  else if (PropCost[i, "exp"] == "B") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1}
-}
+PropCost$Cost <- PropCost$x * sapply(PropCost$exp, ConvertToBillions)
+
+# for (i in 1:dim(PropCost)[1]) {
+#   if (PropCost[i, "exp"] == "K") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000000}
+#   else if (PropCost[i, "exp"] == "M") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000}
+#   else if (PropCost[i, "exp"] == "B") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1}
+# }
 
 
 #Do the transformation for the corp damage
@@ -137,18 +170,21 @@ CropCost <- aggregate (storm_data$CROPDMG, list(type=storm_data$EVTYPE, exp=stor
 
 CropCost <- sqldf("SELECT * FROM CropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(CropCost)[1]) {
-  if (CropCost[i, "exp"] == "K") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000000}
-  else if (CropCost[i, "exp"] == "M") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000}
-  else if (CropCost[i, "exp"] == "B") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1}
-}
+CropCost$Cost <- CropCost$x * sapply(CropCost$exp, ConvertToBillions)
+
+
+# for (i in 1:dim(CropCost)[1]) {
+#   if (CropCost[i, "exp"] == "K") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000000}
+#   else if (CropCost[i, "exp"] == "M") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000}
+#   else if (CropCost[i, "exp"] == "B") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1}
+# }
 
 DmgCost <-rbind(PropCost, CropCost)
 DmgCostAgg<-aggregate(DmgCost$Cost, list(EVTYPE=DmgCost$type), sum)
 
 ## Find the top 10 event types
 High_Impact_E <- sqldf("SELECT * FROM DmgCostAgg ORDER BY x DESC LIMIT 10")
-names(High_Impact_E)[2] <- "Cost"
+# names(High_Impact_E)[2] <- "Cost"
 
 
 

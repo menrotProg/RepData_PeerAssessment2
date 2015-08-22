@@ -10,6 +10,8 @@ Based on the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm
 
 The answers to these questions will appear in the **Results** section of this article.
 
+In the data processing section of the economic impact, I have made some data cleaning and data transformation as described below.
+
 By answering these questions, the authorities can prioritize their actions following weather forecasts warning of such events.
 
 # Data Processing
@@ -102,6 +104,160 @@ g <- g + facet_wrap( ~ variable, ncol=1)
 
 The economic impact is calculated as the sum of the property damage and the corp damage. 
 
+By exploring the data, I realized that the column with code for damage has additional values to the B, M, K mentioned in the documentation. So, first I explore the data to see if these additional codes are meaningful or not. 
+
+
+
+```r
+sqldf("SELECT PROPDMGEXP , COUNT(PROPDMGEXP) FROM storm_data GROUP BY PROPDMGEXP")
+```
+
+```
+##    PROPDMGEXP COUNT(PROPDMGEXP)
+## 1                        465934
+## 2           +                 5
+## 3           -                 1
+## 4           0               216
+## 5           1                25
+## 6           2                13
+## 7           3                 4
+## 8           4                 4
+## 9           5                28
+## 10          6                 4
+## 11          7                 5
+## 12          8                 1
+## 13          ?                 8
+## 14          B                40
+## 15          H                 6
+## 16          K            424665
+## 17          M             11330
+## 18          h                 1
+## 19          m                 7
+```
+
+```r
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT PROPDMG FROM storm_data WHERE (PROPDMGEXP = '' AND PROPDMG>0)")
+```
+
+```
+##    PROPDMG
+## 1     0.41
+## 2     3.00
+## 3     2.00
+## 4     4.00
+## 5     4.00
+## 6    10.00
+## 7    10.00
+## 8    10.00
+## 9     4.00
+## 10    5.00
+## 11   10.00
+## 12   35.00
+## 13   75.00
+## 14    3.00
+## 15   10.00
+## 16    1.00
+## 17    3.00
+## 18   20.00
+## 19    2.00
+## 20   20.00
+## 21   10.00
+## 22    1.00
+## 23   20.00
+## 24    5.00
+## 25    4.00
+## 26    5.00
+## 27    4.00
+## 28    6.00
+## 29    7.00
+## 30    7.00
+## 31   10.00
+## 32    9.00
+## 33    3.00
+## 34    2.00
+## 35    8.00
+## 36    8.00
+## 37    6.00
+## 38    3.00
+## 39    2.00
+## 40    7.00
+## 41    4.00
+## 42    1.00
+## 43    3.00
+## 44    5.00
+## 45    6.00
+## 46    5.00
+## 47    3.00
+## 48    1.00
+## 49   10.00
+## 50    3.00
+## 51    5.00
+## 52    3.00
+## 53    5.00
+## 54    2.00
+## 55    3.00
+## 56    9.00
+## 57    4.00
+## 58    3.00
+## 59    5.00
+## 60    6.00
+## 61    3.00
+## 62    3.00
+## 63    6.00
+## 64    3.00
+## 65    9.00
+## 66    2.00
+## 67    4.00
+## 68    5.00
+## 69    5.00
+## 70    2.00
+## 71    4.00
+## 72    5.00
+## 73    3.00
+## 74    6.00
+## 75   20.00
+## 76    3.00
+```
+
+There are 76 instances with property damage, but no code for $ value. In this analysis I will ignore them, alas its worth to try to get information and modify the raw data.
+
+
+
+
+```r
+sqldf("SELECT CROPDMGEXP , COUNT(CROPDMGEXP) FROM storm_data GROUP BY CROPDMGEXP")
+```
+
+```
+##   CROPDMGEXP COUNT(CROPDMGEXP)
+## 1                       618413
+## 2          0                19
+## 3          2                 1
+## 4          ?                 7
+## 5          B                 9
+## 6          K            281832
+## 7          M              1994
+## 8          k                21
+## 9          m                 1
+```
+
+```r
+## As the NO CODE ("") has significant number of instances, check how many instance have no code but do have a value for damage
+sqldf("SELECT CROPDMG FROM storm_data WHERE (CROPDMGEXP = '' AND CROPDMG>0)")
+```
+
+```
+##   CROPDMG
+## 1       3
+## 2       4
+## 3       4
+```
+
+In the above tables we can see that we can ignore all codes except K,M,B as the others have relatively moinor impact. 
+
+
+
 As the damage is presented with codes for thousand (K), millions (M) and billions (B), I have transformed all of them to be in Billions of $, for both the property damage and the corp damage.
 
 
@@ -111,28 +267,30 @@ As the damage is presented with codes for thousand (K), millions (M) and billion
 ## Convert all $ values to Billion's of $
 #############################################
 
+
+## A function to ocnvert to Billions
+ConvertToBillions <- function(code) {
+  switch(code, K = 1e-6, M = 1e-3, B = 1, 0)
+}
+
+###################################################
 ## Do the transformation for the property damage
+###################################################
 PropCost <- aggregate (storm_data$PROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$PROPDMGEXP), sum)
 
 PropCost <- sqldf("SELECT * FROM PropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(PropCost)[1]) {
-  if (PropCost[i, "exp"] == "K") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000000}
-  else if (PropCost[i, "exp"] == "M") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1000}
-  else if (PropCost[i, "exp"] == "B") {PropCost[i, "Cost"] <- PropCost[i, "x"] / 1}
-}
+PropCost$Cost <- PropCost$x * sapply(PropCost$exp, ConvertToBillions)
 
 
+###################################################
 #Do the transformation for the corp damage
+###################################################
 CropCost <- aggregate (storm_data$CROPDMG, list(type=storm_data$EVTYPE, exp=storm_data$CROPDMGEXP), sum)
 
 CropCost <- sqldf("SELECT * FROM CropCost WHERE exp IN ('B', 'M', 'K,')")
 
-for (i in 1:dim(CropCost)[1]) {
-  if (CropCost[i, "exp"] == "K") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000000}
-  else if (CropCost[i, "exp"] == "M") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1000}
-  else if (CropCost[i, "exp"] == "B") {CropCost[i, "Cost"] <- CropCost[i, "x"] / 1}
-}
+CropCost$Cost <- CropCost$x * sapply(CropCost$exp, ConvertToBillions)
 
 DmgCost <-rbind(PropCost, CropCost)
 DmgCostAgg<-aggregate(DmgCost$Cost, list(EVTYPE=DmgCost$type), sum)
@@ -176,7 +334,7 @@ print (g)
 As can be seen above - TORNADO has the highest inhuruis and also highest fatalities.
 
 
-## The type of events with the greatest econimic consequences
+## The type of events with the greatest economic consequences
 
 
 ```r
